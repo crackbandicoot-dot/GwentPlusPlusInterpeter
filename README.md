@@ -165,7 +165,3 @@ card { }
 
 var cards = Compiler.Compile(program, new MyCardFactory(), Console.WriteLine);
 ```
-
-## License
-
-No license file was found in the repository at the time of writing.
