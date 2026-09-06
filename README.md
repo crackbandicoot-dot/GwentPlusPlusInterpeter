@@ -4,11 +4,22 @@ GwentPPCompiler is a C# domain-specific language (DSL) compiler for building **G
 
 It parses a G++ program, evaluates it, and turns the resulting card definitions into runtime card objects through a user-provided `ICardFactory`.
 
-## Important example DSL script
 
+## What this language handles
+
+The DSL is a **JSON-like language with delegates** focused on card/effect authoring for GWENT-style mechanics.
+
+- **JSON-like structure**: declarations are block-based key/value objects such as `card { ... }`, `effect { ... }`, `Params { ... }`, `Selector { ... }`.
+- **Delegate-style behavior**: effects contain executable delegate bodies such as:
+  - `Action: (targets, context) => { ... }`
+  - `Predicate: (unit) => unit.Type == "Silver"`
+- **Composable activation pipeline**: `OnActivation` supports chaining `Effect`, `Selector`, and `PostAction`.
+- **Game operations**: draw cards, remove cards, modify power, aggregate across selections, and print runtime diagnostics.
 This is a complete example showing the JSON-like declaration style plus delegate-based `Action`/`Predicate` behavior.
 
-```txt
+### DSL code example
+
+```json
 effect
 {
  Name : "KillPowerfulCard",
@@ -452,20 +463,9 @@ card
 }
 ```
 
-## What this language handles
-
-The DSL is a **JSON-like language with delegates** focused on card/effect authoring for GWENT-style mechanics.
-
-- **JSON-like structure**: declarations are block-based key/value objects such as `card { ... }`, `effect { ... }`, `Params { ... }`, `Selector { ... }`.
-- **Delegate-style behavior**: effects contain executable delegate bodies such as:
-  - `Action: (targets, context) => { ... }`
-  - `Predicate: (unit) => unit.Type == "Silver"`
-- **Composable activation pipeline**: `OnActivation` supports chaining `Effect`, `Selector`, and `PostAction`.
-- **Game operations**: draw cards, remove cards, modify power, aggregate across selections, and print runtime diagnostics.
-
 ## What this project does
 
-At a high level, the compiler:
+At a high level, the interpeter:
 
 1. Reads a G++ source string.
 2. Tokenizes and parses it into an AST.
