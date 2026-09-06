@@ -16,6 +16,17 @@ At a high level, the compiler:
 
 This means the repository is not the game itself, but the language and compiler layer for describing game cards and their effects.
 
+## What this language handles
+
+The DSL is a **JSON-like language with delegates** focused on card/effect authoring for GWENT-style mechanics.
+
+- **JSON-like structure**: declarations are block-based key/value objects such as `card { ... }`, `effect { ... }`, `Params { ... }`, `Selector { ... }`.
+- **Delegate-style behavior**: effects contain executable delegate bodies such as:
+  - `Action: (targets, context) => { ... }`
+  - `Predicate: (unit) => unit.Type == "Silver"`
+- **Composable activation pipeline**: `OnActivation` supports chaining `Effect`, `Selector`, and `PostAction`.
+- **Game operations**: draw cards, remove cards, modify power, aggregate across selections, and print runtime diagnostics.
+
 ## How to use it
 
 The main entry point is:
@@ -164,4 +175,452 @@ card { }
 ";
 
 var cards = Compiler.Compile(program, new MyCardFactory(), Console.WriteLine);
+```
+
+## Important example DSL script
+
+This is a complete example showing the JSON-like declaration style plus delegate-based `Action`/`Predicate` behavior.
+
+```txt
+effect
+{
+ Name : "KillPowerfulCard",
+ Action :(targets,context) =>
+ {
+	maxPower = 0;
+	powerfulCard = 0;
+	for target in targets
+	{
+		if(target.Power>maxPower)
+		{
+			powerfulCard=target;
+			maxPower = target.Power;
+		}
+	}
+	if(powerfulCard!=0)
+	{
+		context.Board.Remove(powerfulCard);
+	}
+ }
+}
+effect
+{
+	Name : "BalanciatePoints",
+	Action: (targets,context) =>
+	{
+		sum = 0;
+		for target in targets
+			sum +=target.Power;
+		averagePower = sum/targets.Count;
+		for target in targets
+			target.Power = averagePower;
+	}
+}
+effect 
+{
+ Name : "Kill",
+ Action :(targets,context) => 
+ {
+	for target in targets
+	{
+		context.Board.Remove(target);
+	}
+ }
+}
+effect
+{
+	Name : "Void",
+	Action:(targets,context) =>{}
+}
+effect
+{
+	Name : "MultiplyByN",
+	Action : (targets,context) => 
+	{
+		for target in targets
+		{
+			target.Power = target.Power*targets.Count;
+		}
+	}
+}
+effect
+{
+	Name :"ModifyPoints",
+	Params :
+	{
+		Quotient: Number
+	},
+	Action :(targets,context) =>
+	{
+		for target in targets
+			target.Power=target.Power*Quotient;
+	}
+}
+effect 
+{
+	Name: "Draw",
+	Params:{
+		Amount : Number
+	},
+	Action :(targets,context) =>{
+		i = 0;
+		while(i<Amount)
+		{
+			kard = context.Deck.Pop();
+			context.Hand.Push(kard);
+			i++;
+		}
+	}
+}
+
+effect
+{
+	Name: "PrintInfo",
+	Action: (targets,context) =>
+	{
+		print("######################");
+		print("PRINTING INFO ...");
+		for target in targets
+			print("Card"@@target.Name@@"has"@@target.Power@@"points");
+		print("######################");
+		
+	}
+}
+card 
+{
+	Type:"Leader",
+	Name : "Dipper",
+	Faction : "Goods",
+	Power : 0,
+	Range:[],
+	OnActivation : 
+	[
+		{
+			Effect : 
+			{
+				Name:"Draw",
+				Amount : 1
+			},
+			Selector:
+			{
+				Source : "otherField",
+				Single: false,
+				Predicate : (unit) => true
+			},
+			PostAction:
+			{
+				Effect:
+				{ 
+					Name :"PrintInfo"
+				}
+			}
+		}
+	]
+}
+
+card 
+{
+	Type:"Gold",
+	Name : "Mabel",
+	Faction : "Goods",
+	Power : 7,
+	Range:["Melee","Ranged","Siesge"],
+	OnActivation : 
+	[
+		{
+			Effect : 
+			{
+				Name:"KillPowerfulCard"
+			},
+			Selector:
+			{
+				Source : "board",
+				Predicate : (unit) => unit.Type=="Silver"
+			},
+			PostAction:
+			{
+				Effect: {
+					Name : "PrintInfo"
+				}
+			}
+		}
+	]
+}
+card 
+{
+	Type:"Gold",
+	Name : "Stan",
+	Faction : "Goods",
+	Power : 8,
+	Range:["Melee","Siesge"],
+	OnActivation : 
+	[
+		{
+			Effect : 
+			{
+				Name:"Draw",
+				Amount : 1
+			},
+			Selector:
+			{
+				Source : "board",
+				Single: false,
+				Predicate : (unit) => unit.Power<8
+			},
+			PostAction:
+			{
+				Effect: {
+					Name : "PrintInfo"
+				}
+			}
+		}
+	]
+}
+card{
+	Name : "Wendy",
+	Type : "Silver",
+	Faction : "Goods",
+	Power : 4,
+	Range : ["Melee"],
+	OnActivation :
+		[
+			{
+				Effect :
+				{
+				  Name : "MultiplyByN"
+				},
+				Selector:
+				{
+					Source : "board",
+					Predicate : (unit) => unit.Name == "Wendy"
+				},
+				PostAction :
+				{
+					Effect :
+					{
+						Name : "PrintInfo"
+					}
+				}
+			}
+		]
+}
+card
+{
+	 Name : "BlendinBlandin",
+	 Type : "Silver",
+	 Range : ["Ranged","Siesge"],
+	 Power : 4,
+	 Faction : "Goods",
+	 OnActivation : 
+	 [
+		{
+			Effect :
+			{
+				Name : "BalanciatePoints"
+			},
+			Selector:
+			{
+				Source : "board",
+				Single : false,
+				Predicate : (unit) => unit.Type=="Silver"||unit.Type=="Gold"||unit.Type=="Decoy"
+			},
+			PostAction :
+			{
+				Effect:{
+				Name : "PrintInfo"
+				}
+			}
+		}
+	 ]
+}
+card
+{
+	 Name : "Pacifica",
+	 Type : "Gold",
+	 Range : ["Ranged"],
+	 Power : 4,
+	 Faction : "Goods",
+	 OnActivation : 
+	 [
+		{
+			Effect :
+			{
+				Name : "ModifyPoints",
+				Quotient : 5
+			},
+			Selector:
+			{
+				Source : "field",
+				Single : false,
+				Predicate : (unit) => unit.Type=="Silver" && unit.Power<5
+			},
+			PostAction :
+			{
+				Effect :{
+				Name : "PrintInfo"
+				}
+			}
+		}
+	 ]
+}
+
+card{
+	Name : "Robby",
+	Type : "Silver",
+	Range : ["Melee","Ranged"],
+	Power : 4,
+	Faction : "Goods",
+	OnActivation : 
+	[
+		{
+			Effect :
+			{
+				Name : "ModifyPoints",
+				Quotient : 2*10^-1
+			},
+			Selector:
+			{
+				Source : "board",
+				Single : false,
+				Predicate : (unit) => unit.Type=="Silver" && unit.Power>7
+			},
+			PostAction :
+			{
+				Effect:
+				{
+				Name : "PrintInfo"
+				}
+			}
+		}
+	]
+}
+card{
+	Name : "Soos",
+	Type : "Silver",
+	Range : ["Melee","Ranged"],
+	Power : 4,
+	Faction : "Goods",
+	OnActivation : 
+	[
+		{
+			Effect :
+			{
+				Name : "Kill"
+			},
+			Selector:
+			{
+				Source : "board",
+				Single : false,
+				Predicate : (unit) =>unit.Type=="Silver"&&unit.Power<5
+			},
+			PostAction :
+			{
+				Effect : {
+				Name : "PrintInfo"
+				}
+			}
+		}
+	]
+}
+card{
+	Name : "Gideon",
+	Type : "Gold",
+	Range : ["Melee","Ranged","Siesge"],
+	Power : 4,
+	Faction : "Goods",
+	OnActivation : 
+	[
+		{
+			Effect :
+			{
+				Name : "Kill"
+			},
+			Selector:
+			{
+				Source : "otherField",
+				Single : true,
+				Predicate : (unit) => unit.Type=="Silver" && unit.Power<=4
+			},
+			PostAction  :
+			{
+				Effect: {
+					Name : "PrintInfo"
+				}
+			}
+		}
+	]
+}
+card
+{
+	Name : "Tormenta",
+	Type : "Weather",
+	Range : ["Siesge"],
+	Power : 0,
+	Faction : "Neutral",
+	OnActivation : []
+}
+card
+{
+	Name : "Diluvio",
+	Type : "Weather",
+	Range : ["Melee"],
+	Power : 0,
+	Faction : "Neutral",
+	OnActivation :[]
+}
+card
+{
+	Name : "Niebla",
+	Type : "Weather",
+	Range : ["Ranged"],
+	Power : 0,
+	Faction : "Neutral",
+	OnActivation :[]
+}
+card 
+{
+ Name : "LinternaDeCrecimiento",
+ Type : "Boost",
+ Range : ["Siesge"],
+ Power : 0,
+ Faction : "Neutral",
+ OnActivation :[]
+}
+card
+{
+ Name : "CirculoDeUnidad",
+ Type : "Boost",
+ Range : ["Melee"],
+ Power : 0,
+ Faction : "Neutral",
+ OnActivation :[]
+}
+card 
+{
+ Name : "PittCola",
+ Type : "Boost",
+ Range : ["Ranged"],
+ Power : 0,
+ Faction : "Neutral",
+ OnActivation : []
+}
+
+card 
+{
+ Name : "SolResplandeciente",
+ Type : "Clearing",
+ Range : ["Melee","Ranged","Siesge"],
+ Power : 0,
+ Faction : "Neutral",
+ OnActivation : []
+}
+card 
+{
+	Name : "Pato",
+	Type : "Decoy",
+	Range : ["Melee","Ranged","Siesge"],
+	Power : 0,
+	Faction : "Neutral",
+	OnActivation : []
+}
 ```
